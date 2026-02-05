@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Instant Chat</title>
+
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial;
+            /* slightly smaller overall text so the layout fits better */
+            font-size: 14px;
+            background: #111;
+            color: #f5f5f5;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            /* lock page scrolling while keeping internal message scroll */
+            overflow: hidden;
+        }
+
+        #loginScreen,
+        #chatScreen {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        #loginScreen h1 {
+            margin-bottom: 8px;
+        }
+
+        #loginScreen input {
+            margin: 4px 0;
+            width: 200px;
+        }
+
+        #joinBtn {
+            margin-top: 8px;
+        }
+
+        #nameNotice,
+        #nameCharCount {
+            margin-top: 4px;
+        }
+
+        input,
+        button {
+            /* reduced padding and font so controls take less space */
+            padding: 8px;
+            border-radius: 6px;
+            border: none;
+            font-size: 14px;
+        }
+
+        button {
+            cursor: pointer;
+        }
+
+        #topBar {
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            position: relative;
+            z-index: 1;
+        }
+
+        #settingsCog {
+            background: #444;
+            padding: 8px 12px;
+            font-size: 18px;
+            border-radius: 8px;
+        }
+
+        #settingsMenu {
+            position: absolute;
+            right: 0;
+            top: 45px;
+            background: #222;
+            border-radius: 10px;
+            padding: 10px;
+            display: none;
+            flex-direction: column;
+            min-width: 200px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, .4);
+            z-index: 10;
+        }
+
+        .menuBtn {
+            background: transparent;
+            color: #f5f5f5;
+            text-align: left;
+            padding: 8px;
+            border-radius: 6px;
+        }
+
+        .menuBtn:hover {
+            background: #333;
+        }
+
+        #chatScreen {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            margin-top: 0;
+            transition: margin-top 0.3s ease;
+        }
+
+        #chatContainer {
+            /* Make container responsive to viewport so it fits on-screen */
+            height: calc(100vh - 80px);
+            max-height: calc(100vh - 80px);
+            min-height: 360px;
+            width: 100%;
+            max-width: 900px;
+            display: flex;
+            flex-direction: column;
+            /* Slightly lighter box behind the messages */
+            background: #1b1b1b;
+            /* slightly tighter padding for a denser layout */
+            padding: 8px;
+            border-radius: 12px;
+        }
+
+        #messages {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+            /* give breathing room so it doesn't touch the chat container */
+            margin: 8px 0;
+            /* Inner messages area contrasted from page background */
+            background: #1f1f1f;
+            padding: 8px;
+            border-radius: 8px;
+        }
+
+        .message {
+            margin-bottom: 8px;
+            padding: 6px 10px;
+            background: #222;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            word-break: break-word;
+            font-size: 13px;
+        }
+
+        .messageLeft {
+            display: flex;
+            align-items: center;
+            flex: 1;
+            white-space: pre-wrap;
+        }
+
+        .name {
+            font-weight: bold;
+            color: #bbb;
+            margin-right: 6px;
+            white-space: nowrap;
+        }
+
+        .time {
+            font-size: 12px;
+            color: #888;
+            white-space: nowrap;
+            margin-left: 6px;
+        }
+
+        .messageRight {
+            display: flex;
+            align-items: center;
+        }
+
+        #inputRow {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            gap: 8px;
+        }
+
+        #messageInput {
+            flex: 1;
+        }
+
+        #charCount {
+            font-size: 11px;
+            color: #aaa;
+            margin-top: 6px;
+            align-self: flex-end;
+            width: 100%;
+            text-align: right;
+            padding-right: 4px;
+        }
+
+        #nameCharCount {
+            font-size: 12px;
+            color: #aaa;
+        }
+
+        .binBtn {
+            margin-left: 6px;
+            background: #555;
+            color: #fff;
+            height: 24px;
+            width: 24px;
+            padding: 0;
+            border-radius: 6px;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+
+        .deletedMsg {
+            font-style: italic;
+            color: #888;
+            font-size: 12px;
+        }
+
+        #popupBox {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #222;
+            color: #f5f5f5;
+            padding: 20px 30px;
+            border-radius: 10px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+            display: none;
+            z-index: 1000;
+            max-width: 300px;
+            text-align: center;
+        }
+
+        #popupBox button {
+            margin-top: 15px;
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: none;
+            background: #444;
+            color: #f5f5f5;
+            cursor: pointer;
+        }
+
+        #announcementBanner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            background: lightgray;
+            color: black;
+            text-align: center;
+            padding: 10px 0;
+            display: none;
+            z-index: 1000;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- POPUP -->
+    <div id="popupBox">
+        <div id="popupText"></div>
+        <button onclick="closePopup()">OK</button>
+    </div>
+
+    <!-- LOGIN -->
+    <div id="loginScreen">
+        <h1>Join Chat</h1>
+
+        <input id="nameInput" placeholder="Enter your name" maxlength="15" />
+        <div id="nameCharCount">0/15</div>
+
+        <div id="nameNotice">
+            You cannot change your name for 2 hours after choosing it.
+        </div>
+
+        <button id="joinBtn" onclick="joinChat()" style="background:#2563eb;color:white;">
+            Join Chat
+        </button>
+    </div>
+
+    <!-- CHAT -->
+    <div id="chatScreen" style="display:none;">
+        <div id="chatContainer">
+
+            <div id="topBar">
+                <h2 id="welcomeText"></h2>
+
+                <div>
+                    <button id="settingsCog" onclick="toggleSettings()">⚙</button>
+                    <div id="settingsMenu">
+                        <button class="menuBtn" onclick="changeName()">Change Name</button>
+                        <button id="deleteMenuBtn" class="menuBtn" onclick="enableDeleteMode()">Delete Messages</button>
+                        <button id="announceMenuBtn" class="menuBtn" style="display:none;" onclick="showAnnouncementPopup()">Create Announcement</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="messages"></div>
+
+            <div id="inputRow">
+                <input id="messageInput" placeholder="Messages automatically delete after one hour..." maxlength="150" />
+                <button id="sendBtnChat" onclick="sendMessage()" style="background:#2563eb;color:white;">Send</button>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
+                <div id="cooldownMessage" style="font-size: 11px; color: #aaa; margin-top: 6px; white-space: nowrap;">
+                    You can send a message every 5 seconds.
+                </div>
+                <div id="charCount" style="font-size: 11px; color: #aaa; margin-top: 6px; text-align: right; padding-right: 4px;">
+                    0/150
+                </div>
+            </div>
+
+        </div>
+
+        <div id="announcementBanner"></div>
+    </div>
+
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyD38LYdhpen4L0NFBtD9U0zibh3AfbH6LY",
+            authDomain: "chatr-80275.firebaseapp.com",
+            databaseURL: "https://chatr-80275-default-rtdb.asia-southeast1.firebasedatabase.app/",
+            projectId: "chatr-80275",
+            storageBucket: "chatr-80275.firebasestorage.app",
+            messagingSenderId: "832414502731",
+            appId: "1:832414502731:web:2cf67e444e8ca572a0a2ce"
+        };
+
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.database();
+
+        let username = "";
+        let CMDActive = false;
+        let deleteMode = false;
+        let announcementActive = false;
+        let announcementEndTime = 0;
+        let announcementInterval = null;
+
+        const NAME_LOCK_TIME = 2 * 60 * 60 * 1000;
+        const DELETED_MESSAGE_LIFETIME = 2 * 60 * 1000;
+        const NORMAL_MESSAGE_LIFETIME = 60 * 60 * 1000;
+        const CLEANUP_INTERVAL = 10 * 1000;
+
+        const messageInput = document.getElementById("messageInput");
+        const charCount = document.getElementById("charCount");
+
+        const nameInput = document.getElementById("nameInput");
+        const nameCharCount = document.getElementById("nameCharCount");
+
+        messageInput.addEventListener("input", () => {
+            charCount.textContent = `${messageInput.value.length}/150`;
+        });
+
+        nameInput.addEventListener("input", () => {
+            nameCharCount.textContent = `${nameInput.value.length}/15`;
+        });
+
+        messageInput.addEventListener("keypress", e => {
+            if (e.key === "Enter") sendMessage();
+        });
+
+        window.onload = () => {
+            const saved = localStorage.getItem("chatUser");
+            if (saved) {
+                const data = JSON.parse(saved);
+                username = data.name;
+
+                const elapsed = Date.now() - data.setTime;
+                if (elapsed < NAME_LOCK_TIME) {
+                    document.getElementById("nameNotice").textContent =
+                        `You cannot change your name for ${Math.floor((NAME_LOCK_TIME - elapsed) / 60000)} more minutes.`;
+                }
+
+                enterChat();
+            }
+
+            setInterval(checkAnnouncement, 5000);
+            setInterval(checkAnnouncementTimeout, 5000);
+        };
+
+        // -------- POPUP --------
+        function showPopup(message) {
+            const popup = document.getElementById("popupBox");
+            document.getElementById("popupText").textContent = message;
+            popup.style.display = "block";
+        }
+
+        function closePopup() {
+            document.getElementById("popupBox").style.display = "none";
+        }
+
+        // -------- JOIN CHAT WITH UNIQUE NAME CHECK --------
+        function joinChat() {
+            const name = nameInput.value.trim();
+            if (!name) return showPopup("Please enter a name.");
+
+            // Check Firebase messages for existing username
+            db.ref("messages").once("value", snap => {
+                let nameTaken = false;
+                snap.forEach(c => {
+                    const msg = c.val();
+                    if (msg.name.toLowerCase() === name.toLowerCase()) {
+                        nameTaken = true;
+                    }
+                });
+
+                if (nameTaken) {
+                    showPopup("This username is already taken.");
+                } else {
+                    username = name;
+                    localStorage.setItem("chatUser", JSON.stringify({ name: username, setTime: Date.now() }));
+                    enterChat();
+                }
+            });
+        }
+
+        function enterChat() {
+            document.getElementById("loginScreen").style.display = "none";
+            document.getElementById("chatScreen").style.display = "flex";
+            document.getElementById("welcomeText").textContent = `Welcome, ${username}`;
+
+            listenForMessages();
+            startAutoCleanup();
+        }
+
+        function toggleSettings() {
+            const m = document.getElementById("settingsMenu");
+            m.style.display = m.style.display === "flex" ? "none" : "flex";
+        }
+
+        function changeName() {
+            const saved = JSON.parse(localStorage.getItem("chatUser"));
+            if (!saved) return;
+            const elapsed = Date.now() - saved.setTime;
+            if (elapsed < NAME_LOCK_TIME) {
+                showPopup(`You can change your name in about ${Math.floor((NAME_LOCK_TIME - elapsed) / 60000)} minutes.`);
+                return;
+            }
+            const popup = document.getElementById("popupBox");
+            popup.innerHTML = `
+                <div id='popupText' style='margin-bottom:10px;'>Enter new name:</div>
+                <input id='newNameInput' type='text' maxlength='15' placeholder='New name...' autofocus />
+                <div style='display:flex; gap:10px; justify-content:center; margin-top:10px;'>
+                    <button onclick='submitNewName()'>OK</button>
+                    <button onclick='closePopup()' style='background:#888;color:#222;'>Cancel</button>
+                </div>
+            `;
+            popup.style.display = "block";
+            setTimeout(() => {
+                const input = document.getElementById('newNameInput');
+                if(input) input.focus();
+            }, 100);
+        }
+
+        function submitNewName() {
+            const newName = document.getElementById('newNameInput').value.trim().substring(0, 15);
+            if (!newName) return showPopup("Please enter a new name.");
+            username = newName;
+            localStorage.setItem("chatUser", JSON.stringify({ name: username, setTime: Date.now() }));
+            document.getElementById("welcomeText").textContent = `Welcome, ${username}`;
+            closePopup();
+        }
+
+        function showAnnouncementPopup() {
+            const popup = document.getElementById("popupBox");
+            popup.innerHTML = `
+                <div id='popupText' style='margin-bottom:10px;'>Announcement text:</div>
+                <input id='announcementInput' type='text' maxlength='100' placeholder='Enter announcement...' autofocus />
+                <div class='popup-row'>
+                    <label for='announcementMin'>Minutes:</label>
+                    <input id='announcementMin' type='number' min='0' max='60' value='0'>
+                    <label for='announcementSec'>Seconds:</label>
+                    <input id='announcementSec' type='number' min='0' max='59' value='10'>
+                </div>
+                <div style='display:flex; gap:10px; justify-content:center; margin-top:10px;'>
+                    <button onclick='submitAnnouncement()'>OK</button>
+                    <button onclick='closePopup()' style='background:#888;color:#222;'>Cancel</button>
+                </div>
+            `;
+            popup.style.display = "block";
+            setTimeout(() => {
+                const input = document.getElementById('announcementInput');
+                if(input) input.focus();
+            }, 100);
+        }
+
+        function submitAnnouncement() {
+            const text = document.getElementById('announcementInput').value.trim();
+            const min = parseInt(document.getElementById('announcementMin').value) || 0;
+            const sec = parseInt(document.getElementById('announcementSec').value) || 0;
+            if (!text) return showPopup("Please enter announcement text.");
+            const duration = min * 60 + sec;
+            const endTime = Date.now() + duration * 1000;
+            db.ref("announcement").set({ text, endTime });
+            closePopup();
+        }
+
+        function checkAnnouncement() {
+            db.ref("announcement").once("value", snap => {
+                const data = snap.val();
+                const banner = document.getElementById("announcementBanner");
+                if (data && data.text && Date.now() < data.endTime) {
+                    banner.textContent = data.text;
+                    banner.style.display = "block";
+                    document.getElementById("chatScreen").style.marginTop = banner.offsetHeight + "px";
+                    announcementActive = true;
+                    announcementEndTime = data.endTime;
+                } else {
+                    banner.style.display = "none";
+                    document.getElementById("chatScreen").style.marginTop = "0";
+                    announcementActive = false;
+                }
+            });
+        }
+
+        function checkAnnouncementTimeout() {
+            if (announcementActive && Date.now() >= announcementEndTime) {
+                document.getElementById("announcementBanner").style.display = "none";
+                announcementActive = false;
+            }
+        }
+
+        function enableAdminOptions() {
+            CMDActive = true;
+            document.getElementById("deleteMenuBtn").textContent = "Delete Messages";
+            document.getElementById("announceMenuBtn").style.display = "block";
+            showPopup("Admin options enabled.");
+        }
+
+        function showAdminPinPopup() {
+            const popup = document.getElementById("popupBox");
+            popup.innerHTML = `
+                <div id='popupText' style='margin-bottom:10px;'>Enter admin PIN:</div>
+                <input id='adminPinInput' type='password' maxlength='12' placeholder='PIN code...' autofocus />
+                <div style='display:flex; gap:10px; justify-content:center; margin-top:10px;'>
+                    <button onclick='submitAdminPin()'>OK</button>
+                    <button onclick='closePopup()' style='background:#888;color:#222;'>Cancel</button>
+                </div>
+            `;
+            popup.style.display = "block";
+            setTimeout(() => {
+                const input = document.getElementById('adminPinInput');
+                if(input) input.focus();
+            }, 100);
+        }
+
+        function submitAdminPin() {
+            const pin = document.getElementById('adminPinInput').value;
+            if (pin === '000238') {
+                const popup = document.getElementById("popupBox");
+                popup.innerHTML = `
+                    <div id='popupText' style='margin-bottom:10px;'>Admin options enabled.</div>
+                    <button onclick='closePopup()'>Done</button>
+                `;
+                enableAdminOptions();
+            } else {
+                showPopup('Incorrect PIN.');
+            }
+        }
+
+        let lastMessageTime = 0;
+
+        function sendMessage() {
+            const text = messageInput.value.trim();
+            if (!text) return;
+
+            const now = Date.now();
+            if (now - lastMessageTime < 5000) {
+                return;
+            }
+
+            lastMessageTime = now;
+
+            if (text === "admin" && !CMDActive) {
+                showAdminPinPopup();
+                messageInput.value = "";
+                charCount.textContent = "0/150";
+                return;
+            }
+
+            db.ref("messages").push({
+                name: username,
+                text: text,
+                time: now,
+                deleted: false
+            });
+
+            messageInput.value = "";
+            charCount.textContent = "0/150";
+        }
+
+        function formatTime(ts) {
+            const d = new Date(ts);
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function enableDeleteMode() {
+            deleteMode = true;
+            const sendBtn = document.getElementById("sendBtnChat");
+            sendBtn.textContent = "Done";
+            sendBtn.onclick = disableDeleteMode;
+            listenForMessages();
+        }
+
+        function disableDeleteMode() {
+            deleteMode = false;
+            const sendBtn = document.getElementById("sendBtnChat");
+            sendBtn.textContent = "Send";
+            sendBtn.onclick = sendMessage;
+            listenForMessages();
+        }
+
+        function listenForMessages() {
+            const div = document.getElementById("messages");
+
+            db.ref("messages").on("value", snap => {
+                div.innerHTML = "";
+
+                snap.forEach(c => {
+                    const msg = c.val();
+
+                    const msgDiv = document.createElement("div");
+                    msgDiv.className = "message";
+
+                    const leftSpan = document.createElement("span");
+                    leftSpan.className = "messageLeft";
+
+                    if (msg.deleted) {
+                        leftSpan.innerHTML = `<span class="deletedMsg">This message has been deleted</span>`;
+                    } else {
+                        leftSpan.innerHTML = `<span class="name">${msg.name}:</span> ${msg.text}`;
+                    }
+
+                    msgDiv.appendChild(leftSpan);
+
+                    const rightSpan = document.createElement("span");
+                    rightSpan.className = "messageRight";
+
+                    const timeSpan = document.createElement("span");
+                    timeSpan.className = "time";
+                    timeSpan.textContent = formatTime(msg.time);
+
+                    rightSpan.appendChild(timeSpan);
+
+                    if (deleteMode && !msg.deleted) {
+                        const canDelete = CMDActive || msg.name === username;
+                        if (canDelete) {
+                            const bin = document.createElement("button");
+                            bin.textContent = "🗑️";
+                            bin.className = "binBtn";
+                            bin.onclick = () => c.ref.update({ deleted: true });
+                            rightSpan.appendChild(bin);
+                        }
+                    }
+
+                    msgDiv.appendChild(rightSpan);
+                    div.appendChild(msgDiv);
+                });
+
+                div.scrollTop = div.scrollHeight;
+            });
+        }
+
+        function startAutoCleanup() {
+            setInterval(runCleanupCheck, CLEANUP_INTERVAL);
+        }
+
+        function runCleanupCheck() {
+            const now = Date.now();
+
+            db.ref("messages").once("value", snap => {
+                snap.forEach(child => {
+                    const msg = child.val();
+                    const age = now - msg.time;
+
+                    if (msg.deleted && age >= DELETED_MESSAGE_LIFETIME) {
+                        child.ref.remove();
+                    } else if (!msg.deleted && age >= NORMAL_MESSAGE_LIFETIME) {
+                        child.ref.remove();
+                    }
+                });
+            });
+        }
+    </script>
+
+</body>
+
+</html>
